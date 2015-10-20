@@ -12,6 +12,6 @@
 
 + (instancetype)sharedInstance;
 
-- (void)captureTableView:(UITableView *)tableView;
+- (void)captureView:(UIView *)rootView;
 
 @end
