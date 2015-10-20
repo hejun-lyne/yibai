@@ -60,6 +60,11 @@
 
 static CFAbsoluteTime startTime;
 - (void)captureView:(UIView *)rootView {
+    dispatch_async(_introQueue, ^(void){
+        [self _captureView:rootView];
+    });
+}
+- (void)_captureView:(UIView *)rootView {
     if (rootView) {
         _startView = rootView;
     }
@@ -67,9 +72,12 @@ static CFAbsoluteTime startTime;
     [self traverseViews:_startView];
     // 标记输出
     [_outputViews removeAllObjects];
-    for (UIView *view in _startView.subviews) {
-        [self markOutput:view];
-    }
+    dispatch_sync(dispatch_get_main_queue(), ^(void){
+        for (UIView *view in _startView.subviews) {
+            [self markOutput:view];
+        }
+    });
+    
     
     startTime = CFAbsoluteTimeGetCurrent();
     // 暂时不处理背景的情况
@@ -126,17 +134,17 @@ static CFAbsoluteTime startTime;
         UIImage *snapshot = UIGraphicsGetImageFromCurrentImageContext();
         UIGraphicsEndImageContext();
         
-        CFAbsoluteTime end = CFAbsoluteTimeGetCurrent();
-        NSLog(@"--- table snapshot diff %f", end - startTime);
+        //CFAbsoluteTime end = CFAbsoluteTimeGetCurrent();
+        //NSLog(@"--- table snapshot diff %f", end - startTime);
         // 完成之后继续下一帧
-        dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, 0.03 * NSEC_PER_SEC);
+        dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, 0.02 * NSEC_PER_SEC);
         dispatch_after(popTime, _introQueue, ^(void){
-            [self captureView:nil];
+            [self _captureView:nil];
         });
         // 视频编码
-        [[CLVideoEncoder sharedInstanceWithSize:snapshot.size] encodeImage:snapshot needTransfrom:NO];
-        
-        
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^(void){
+            [[CLVideoEncoder sharedInstanceWithSize:snapshot.size] encodeImage:snapshot needTransfrom:NO];
+        });
     });
 }
 
@@ -148,6 +156,10 @@ static CFAbsoluteTime startTime;
 - (BOOL)traverseViews:(UIView *)rootView {
     if ([[rootView description] hasPrefix:@"<_"]) { // hidden view
         return NO;
+    }
+    
+    if ([[rootView description] hasPrefix:@"<UINavigationTransitionView"]) {
+        NSLog(@"trasition count: %lu, windows count: %lu", (unsigned long)[rootView.subviews count], (unsigned long)[[UIApplication sharedApplication].windows count]);
     }
     if (rootView.hidden) {
         // 如果是隐藏视图，需要清空截图
@@ -184,7 +196,7 @@ static CFAbsoluteTime startTime;
     for (UIView *view in [rootView subviews])
     {
         // 遍历子视图
-        if (!view.clcapChanged && [self traverseViews:view]) {
+        if ([self traverseViews:view] && !view.clcapChanged) {
             view.clcapChanged = @"YES";
         }
     }
